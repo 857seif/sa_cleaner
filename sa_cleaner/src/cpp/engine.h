@@ -34,6 +34,7 @@ int  sa_is_excluded(const char* name);
 void sa_get_exclusions(char* buf, int len);
 int  sa_check_excluded(void);
 unsigned long long sa_estimate_clean(unsigned int mask);
+void sa_estimate_each(unsigned long long* out13);
 void sa_get_standby_size(unsigned long long* size);
 void sa_get_detailed_mem(unsigned long long* total, unsigned long long* avail,
                          unsigned long long* standby, unsigned long long* modified,

@@ -1,8 +1,7 @@
 #!/bin/bash
 set -e
 echo "=========================================="
-echo "   SA Cleaner v1.0 - By Seif Afandi"
-echo "   [Resizable | Dark Mode | Threaded]"
+echo "   SA Cleaner v2.0 - Advanced Build"
 echo "=========================================="
 for cmd in cargo x86_64-w64-mingw32-g++; do
   if ! command -v $cmd &>/dev/null; then echo "[!] Missing: $cmd"; exit 1; fi
@@ -18,8 +17,10 @@ cargo build --release --target x86_64-pc-windows-gnu
 OUT="target/x86_64-pc-windows-gnu/release/sa_cleaner.exe"
 if [ -f "$OUT" ]; then
   echo "[+] SUCCESS: $OUT"
-  cp "$OUT" "../sa_cleaner.exe" 2>/dev/null || true
-  echo "[+] Copied to: sa_cleaner.exe"
+  cp "$OUT" "./sa_cleaner_v2.exe"
+  echo "[+] Copied to: sa_cleaner_v2.exe"
+  ls -lh sa_cleaner_v2.exe
 else
   echo "[!] Build failed"
+  exit 1
 fi

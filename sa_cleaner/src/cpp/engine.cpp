@@ -6,9 +6,9 @@
 #include <shlobj.h>
 #include <shellapi.h>
 
-#pragma comment(lib, "psapi.lib")
-#pragma comment(lib, "shell32.lib")
-#pragma comment(lib, "advapi32.lib")
+#ifndef _MSC_VER
+extern "C" DWORD WINAPI GetModuleBaseNameW(HANDLE, HMODULE, LPWSTR, DWORD);
+#endif
 
 extern "C" {
     typedef LONG NTSTATUS;
@@ -145,7 +145,7 @@ static inline NTSTATUS DoNtSetSysInfo(SYS_INFO_CLASS c, PVOID i, ULONG l) {
             pNtSetSysInfo = (NtSetSysInfoPtr)(void*)GetProcAddress(hNtdll, "NtSetSystemInformation");
     }
     if (!pNtSetSysInfo) return ST_NS;
-    Sleep(g_aggressive ? 50 : 150);
+    
     return pNtSetSysInfo(c, i, l);
 }
 
@@ -166,15 +166,11 @@ static BOOL is_process_running(const wchar_t* name) {
     DWORD count = needed / sizeof(DWORD);
     for (DWORD i = 0; i < count; i++) {
         if (procs[i] == 0) continue;
-        HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, procs[i]);
+        HANDLE h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, procs[i]);
         if (h) {
             WCHAR pname[MAX_PATH] = {0};
-            DWORD size = MAX_PATH;
-            if (QueryFullProcessImageNameW(h, 0, pname, &size)) {
-                WCHAR* base = wcsrchr(pname, L'\\');
-                if (base) base++;
-                else base = pname;
-                if (_wcsicmp(base, name) == 0) {
+            if (GetModuleBaseNameW(h, NULL, pname, MAX_PATH) > 0) {
+                if (_wcsicmp(pname, name) == 0) {
                     CloseHandle(h);
                     return TRUE;
                 }
@@ -244,20 +240,41 @@ int sa_check_excluded(void) {
 }
 
 unsigned long long sa_estimate_clean(unsigned int mask) {
+    unsigned long long standby = 0, modified = 0, cached = 0, total = 0, avail = 0;
+    sa_get_detailed_mem(&total, &avail, &standby, &modified, &cached);
     unsigned long long est = 0;
-    if (mask & REDUCT_WORKING_SET)     est += 200ULL * 1024 * 1024;
-    if (mask & REDUCT_SYSTEM_CACHE)    est += 500ULL * 1024 * 1024;
-    if (mask & REDUCT_STANDBY_LIST)    est += 800ULL * 1024 * 1024;
-    if (mask & REDUCT_MODIFIED_LIST)   est += 300ULL * 1024 * 1024;
-    if (mask & REDUCT_REGISTRY)        est += 50ULL  * 1024 * 1024;
-    if (mask & REDUCT_COMBINE)         est += 150ULL * 1024 * 1024;
-    if (mask & REDUCT_LOW_PRIORITY)    est += 100ULL * 1024 * 1024;
-    if (mask & REDUCT_CLIPBOARD)       est += 5ULL   * 1024 * 1024;
-    if (mask & REDUCT_DNS_CACHE)       est += 2ULL   * 1024 * 1024;
-    if (mask & REDUCT_TEMP_FILES)      est += 300ULL * 1024 * 1024;
-    if (mask & REDUCT_PREFETCH)        est += 50ULL  * 1024 * 1024;
-    if (mask & REDUCT_THUMBNAIL_CACHE) est += 100ULL * 1024 * 1024;
+    if (mask & REDUCT_WORKING_SET)     est += (total / 50);              // ~2%
+    if (mask & REDUCT_SYSTEM_CACHE)    est += cached / 2;
+    if (mask & REDUCT_STANDBY_LIST)    est += standby;
+    if (mask & REDUCT_MODIFIED_LIST)   est += modified / 2;
+    if (mask & REDUCT_REGISTRY)        est += 8ULL * 1024 * 1024;
+    if (mask & REDUCT_COMBINE)         est += 32ULL * 1024 * 1024;
+    if (mask & REDUCT_LOW_PRIORITY)    est += standby / 4;
+    if (mask & REDUCT_CLIPBOARD)       est += 1ULL * 1024 * 1024;
+    if (mask & REDUCT_DNS_CACHE)       est += 512ULL * 1024;
+    if (mask & REDUCT_TEMP_FILES)      est += 64ULL * 1024 * 1024;
+    if (mask & REDUCT_PREFETCH)        est += 16ULL * 1024 * 1024;
+    if (mask & REDUCT_THUMBNAIL_CACHE) est += 32ULL * 1024 * 1024;
     return est;
+}
+
+void sa_estimate_each(unsigned long long* out13) {
+    // out13[0..12] per-flag estimates matching checkbox order
+    unsigned long long standby = 0, modified = 0, cached = 0, total = 0, avail = 0;
+    sa_get_detailed_mem(&total, &avail, &standby, &modified, &cached);
+    out13[0]  = total / 50;          // WS
+    out13[1]  = cached / 2;          // cache
+    out13[2]  = standby;             // standby
+    out13[3]  = modified / 2;        // modified
+    out13[4]  = 8ULL * 1024 * 1024;  // registry
+    out13[5]  = 32ULL * 1024 * 1024; // combine
+    out13[6]  = standby / 4;         // low prio
+    out13[7]  = 0;                   // flush vols
+    out13[8]  = 1ULL * 1024 * 1024;  // clip
+    out13[9]  = 512ULL * 1024;       // dns
+    out13[10] = 64ULL * 1024 * 1024; // temp
+    out13[11] = 16ULL * 1024 * 1024; // prefetch
+    out13[12] = 32ULL * 1024 * 1024; // thumb
 }
 
 void sa_get_standby_size(unsigned long long* size) {
@@ -326,7 +343,7 @@ void sa_flush_dns(void) {
     si.wShowWindow = SW_HIDE;
     wchar_t cmd[] = L"ipconfig /flushdns";
     if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
-        WaitForSingleObject(pi.hProcess, 5000);
+        WaitForSingleObject(pi.hProcess, 1500);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
@@ -358,17 +375,17 @@ static void delete_files_in_dir(const wchar_t* path, int recursive) {
 void sa_clean_temp(void) {
     wchar_t path[MAX_PATH];
     if (GetTempPathW(MAX_PATH, path))
-        delete_files_in_dir(path, 1);
+        delete_files_in_dir(path, 0);
     if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, path))) {
         wchar_t temp2[MAX_PATH];
         _snwprintf(temp2, MAX_PATH, L"%s\\Temp", path);
-        delete_files_in_dir(temp2, 1);
+        delete_files_in_dir(temp2, 0);
     }
     
     if (GetWindowsDirectoryW(path, MAX_PATH)) {
         wchar_t wtemp[MAX_PATH];
         _snwprintf(wtemp, MAX_PATH, L"%s\\Temp", path);
-        delete_files_in_dir(wtemp, 1);
+        delete_files_in_dir(wtemp, 0);
     }
 }
 
@@ -558,11 +575,10 @@ int sa_clean(unsigned int mask) {
         threads[tcount++] = CreateThread(NULL, 0, clean_thumb_thread, NULL, 0, NULL);
     }
 
-    for (int i = 0; i < tcount; i++) {
-        if (threads[i]) {
-            WaitForSingleObject(threads[i], g_aggressive ? 8000 : 12000);
-            CloseHandle(threads[i]);
-            Sleep(g_aggressive ? 80 : 200);
+    if (tcount > 0) {
+        WaitForMultipleObjects((DWORD)tcount, threads, TRUE, g_aggressive ? 1500 : 2500);
+        for (int i = 0; i < tcount; i++) {
+            if (threads[i]) CloseHandle(threads[i]);
         }
     }
 
@@ -641,7 +657,7 @@ void sa_set_priority_low(void) {
 
 static DWORD WINAPI AutoCleanThread(LPVOID) {
     while (g_auto_running) {
-        Sleep(g_aggressive ? 3000 : 8000);
+        Sleep(g_aggressive ? 2000 : 5000);
         if (!g_auto_threshold || !g_auto_running) continue;
         unsigned long long t, u, f;
         sa_get_mem(&t, &u, &f);

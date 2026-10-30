@@ -1,587 +1,831 @@
 #![windows_subsystem = "windows"]
-use std::ffi::{c_char, c_int, c_uint, CStr, CString};
+
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+use std::ffi::OsStr;
+use std::os::windows::ffi::OsStrExt;
+
+type HWND = isize;
+type HINSTANCE = isize;
+type HBRUSH = isize;
+type HDC = isize;
+type HMENU = isize;
+type WPARAM = usize;
+type LPARAM = isize;
+type LRESULT = isize;
+type UINT = u32;
+type BOOL = i32;
+type DWORD = u32;
+type COLORREF = u32;
+type HFONT = isize;
+type HPEN = isize;
+
+const WM_CREATE: UINT = 0x0001;
+const WM_COMMAND: UINT = 0x0111;
+const WM_PAINT: UINT = 0x000F;
+const WM_TIMER: UINT = 0x0113;
+const WM_DESTROY: UINT = 0x0002;
+const WM_SIZE: UINT = 0x0005;
+const WM_CTLCOLORSTATIC: UINT = 0x0138;
+const WM_CTLCOLORBTN: UINT = 0x0135;
+const WM_ERASEBKGND: UINT = 0x0014;
+const BM_GETCHECK: UINT = 0x00F0;
+const BM_SETCHECK: UINT = 0x00F1;
+const BST_CHECKED: WPARAM = 1;
+const BST_UNCHECKED: WPARAM = 0;
+const BS_AUTOCHECKBOX: DWORD = 0x00000003;
+const BS_PUSHBUTTON: DWORD = 0x00000000;
+const BS_DEFPUSHBUTTON: DWORD = 0x00000001;
+const SS_LEFT: DWORD = 0x00000000;
+const SS_CENTER: DWORD = 0x00000001;
+const ES_NUMBER: DWORD = 0x2000;
+const ES_AUTOHSCROLL: DWORD = 0x0080;
+const WS_BORDER: DWORD = 0x00800000;
+const WS_CHILD: DWORD = 0x40000000;
+const WS_VISIBLE: DWORD = 0x10000000;
+const WS_OVERLAPPEDWINDOW: DWORD = 0x00CF0000;
+const WS_FIXED_FRAME: DWORD = 0x00CA0000; // caption+sysmenu+minimize, no maximize/size
+const WS_TABSTOP: DWORD = 0x00010000;
+const WS_GROUP: DWORD = 0x00020000;
+const SW_SHOW: i32 = 5;
+const COLOR_WINDOW: i32 = 5;
+const DT_LEFT: UINT = 0x0000;
+const DT_CENTER: UINT = 0x0001;
+const DT_VCENTER: UINT = 0x0004;
+const DT_SINGLELINE: UINT = 0x0020;
+const DT_WORDBREAK: UINT = 0x0010;
+const MB_OK: UINT = 0x00000000;
+const MB_ICONINFORMATION: UINT = 0x00000040;
+const MB_ICONERROR: UINT = 0x00000010;
+const MB_ICONWARNING: UINT = 0x00000030;
+const MB_YESNO: UINT = 0x00000004;
+const IDOK: i32 = 1;
+const IDYES: i32 = 6;
+const FW_BOLD: i32 = 700;
+const FW_NORMAL: i32 = 400;
+const DEFAULT_CHARSET: u32 = 1;
+const OUT_DEFAULT_PRECIS: u32 = 0;
+const CLIP_DEFAULT_PRECIS: u32 = 0;
+const CLEARTYPE_QUALITY: u32 = 5;
+const DEFAULT_PITCH: u32 = 0;
+const FF_DONTCARE: u32 = 0;
+const PS_SOLID: i32 = 0;
+const TRANSPARENT: i32 = 1;
+const SRCCOPY: DWORD = 0x00CC0020;
+
+const WM_TRAYICON: UINT = 0x8001;
+const WM_APP_CLEAN_DONE: UINT = 0x8002;
+const WM_SYSCOMMAND: UINT = 0x0112;
+const SC_MINIMIZE: WPARAM = 0xF020;
+const SC_CLOSE: WPARAM = 0xF060;
+const NIM_ADD: DWORD = 0x00000000;
+const NIM_DELETE: DWORD = 0x00000002;
+const NIF_MESSAGE: DWORD = 0x00000001;
+const NIF_ICON: DWORD = 0x00000002;
+const NIF_TIP: DWORD = 0x00000004;
+const IDI_APPLICATION: usize = 32512;
+const SW_HIDE: i32 = 0;
+const SW_RESTORE: i32 = 9;
+
+#[repr(C)]
+struct NOTIFYICONDATAW {
+    cb_size: DWORD,
+    h_wnd: HWND,
+    u_id: UINT,
+    u_flags: UINT,
+    u_callback_message: UINT,
+    h_icon: isize,
+    sz_tip: [u16; 128],
+}
+
+#[link(name = "shell32")]
+extern "system" {
+    fn Shell_NotifyIconW(dw_message: DWORD, lp_data: *mut NOTIFYICONDATAW) -> BOOL;
+    fn ExtractIconW(h_inst: HINSTANCE, lpsz_exe: *const u16, n_icon_index: UINT) -> isize;
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn LoadIconW(h_instance: HINSTANCE, lp_icon_name: usize) -> isize;
+    fn IsWindowVisible(h_wnd: HWND) -> BOOL;
+}
+
+
+const IDC_TITLE: i32 = 100;
+const IDC_MEM_INFO: i32 = 101;
+const IDC_STANDBY: i32 = 102;
+const IDC_STATUS: i32 = 103;
+const IDC_ESTIMATE: i32 = 104;
+const IDC_CHK_WS: i32 = 201;
+const IDC_CHK_CACHE: i32 = 202;
+const IDC_CHK_STANDBY: i32 = 203;
+const IDC_CHK_MODIFIED: i32 = 204;
+const IDC_CHK_REGISTRY: i32 = 205;
+const IDC_CHK_COMBINE: i32 = 206;
+const IDC_CHK_LOWPRIO: i32 = 207;
+const IDC_CHK_CLIP: i32 = 208;
+const IDC_CHK_DNS: i32 = 209;
+const IDC_CHK_TEMP: i32 = 210;
+const IDC_CHK_PREFETCH: i32 = 211;
+const IDC_CHK_THUMB: i32 = 212;
+const IDC_CHK_FLUSH: i32 = 213;
+const IDC_BTN_CLEAN: i32 = 301;
+const IDC_BTN_AUTO: i32 = 302;
+const IDC_BTN_STOP_AUTO: i32 = 303;
+const IDC_BTN_AGGRESSIVE: i32 = 304;
+const IDC_BTN_SELECT_ALL: i32 = 305;
+const IDC_BTN_SELECT_SAFE: i32 = 306;
+const IDC_AUTO_LABEL: i32 = 401;
+const IDC_PROC_COUNT: i32 = 402;
+const IDC_LAST_FREED: i32 = 403;
+const IDC_BTN_THEME: i32 = 307;
+const IDC_BTN_BG: i32 = 308;
+const IDC_HELP: i32 = 404;
+const IDC_THRESHOLD_EDIT: i32 = 405;
+const IDC_THRESHOLD_LABEL: i32 = 406;
+const IDC_BTN_TRAY: i32 = 309;
+
+const CLR_DARK_BG: COLORREF = 0x00000000;
+const CLR_DARK_PANEL: COLORREF = 0x00121212;
+const CLR_DARK_TEXT: COLORREF = 0x00F0F0F0;
+const CLR_DARK_MUTED: COLORREF = 0x00999999;
+const CLR_LIGHT_BG: COLORREF = 0x00F5F5F5;
+const CLR_LIGHT_PANEL: COLORREF = 0x00FFFFFF;
+const CLR_LIGHT_TEXT: COLORREF = 0x00111111;
+const CLR_LIGHT_MUTED: COLORREF = 0x00666666;
+const CLR_ACCENT: COLORREF = 0x00E94560;
+const CLR_ACCENT2: COLORREF = 0x0000AAFF;
+const CLR_SUCCESS: COLORREF = 0x0000C853;
+
+#[repr(C)]
+struct WNDCLASSEXW {
+    cb_size: UINT,
+    style: UINT,
+    lpfn_wnd_proc: usize,
+    cb_cls_extra: i32,
+    cb_wnd_extra: i32,
+    h_instance: HINSTANCE,
+    h_icon: isize,
+    h_cursor: isize,
+    hbr_background: HBRUSH,
+    lpsz_menu_name: *const u16,
+    lpsz_class_name: *const u16,
+    h_icon_sm: isize,
+}
+
+#[repr(C)]
+struct MSG {
+    hwnd: HWND,
+    message: UINT,
+    w_param: WPARAM,
+    l_param: LPARAM,
+    time: DWORD,
+    pt_x: i32,
+    pt_y: i32,
+}
+
+#[repr(C)]
+struct RECT {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+#[repr(C)]
+struct PAINTSTRUCT {
+    hdc: HDC,
+    f_erase: BOOL,
+    rc_paint: RECT,
+    f_restore: BOOL,
+    f_inc_update: BOOL,
+    rgb_reserved: [u8; 32],
+}
+
+#[link(name = "user32")]
+extern "system" {
+    fn RegisterClassExW(wc: *const WNDCLASSEXW) -> u16;
+    fn CreateWindowExW(
+        dw_ex_style: DWORD, lp_class_name: *const u16, lp_window_name: *const u16,
+        dw_style: DWORD, x: i32, y: i32, n_width: i32, n_height: i32,
+        h_wnd_parent: HWND, h_menu: HMENU, h_instance: HINSTANCE, lp_param: *mut u8,
+    ) -> HWND;
+    fn ShowWindow(h_wnd: HWND, n_cmd_show: i32) -> BOOL;
+    fn UpdateWindow(h_wnd: HWND) -> BOOL;
+    fn GetMessageW(lp_msg: *mut MSG, h_wnd: HWND, w_msg_filter_min: UINT, w_msg_filter_max: UINT) -> BOOL;
+    fn TranslateMessage(lp_msg: *const MSG) -> BOOL;
+    fn DispatchMessageW(lp_msg: *const MSG) -> LRESULT;
+    fn DefWindowProcW(h_wnd: HWND, msg: UINT, w_param: WPARAM, l_param: LPARAM) -> LRESULT;
+    fn PostQuitMessage(n_exit_code: i32);
+    fn BeginPaint(h_wnd: HWND, lp_paint: *mut PAINTSTRUCT) -> HDC;
+    fn EndPaint(h_wnd: HWND, lp_paint: *const PAINTSTRUCT) -> BOOL;
+    fn FillRect(h_dc: HDC, lprc: *const RECT, hbr: HBRUSH) -> i32;
+    fn SetTimer(h_wnd: HWND, n_id_event: usize, u_elapse: UINT, lp_timer_func: usize) -> usize;
+    fn KillTimer(h_wnd: HWND, u_id_event: usize) -> BOOL;
+    fn InvalidateRect(h_wnd: HWND, lp_rect: *const RECT, b_erase: BOOL) -> BOOL;
+    fn GetClientRect(h_wnd: HWND, lp_rect: *mut RECT) -> BOOL;
+    fn SendMessageW(h_wnd: HWND, msg: UINT, w_param: WPARAM, l_param: LPARAM) -> LRESULT;
+    fn SetWindowTextW(h_wnd: HWND, lp_string: *const u16) -> BOOL;
+    fn GetWindowTextW(h_wnd: HWND, lp_string: *mut u16, n_max_count: i32) -> i32;
+    fn MessageBoxW(h_wnd: HWND, lp_text: *const u16, lp_caption: *const u16, u_type: UINT) -> i32;
+    fn GetDC(h_wnd: HWND) -> HDC;
+    fn ReleaseDC(h_wnd: HWND, h_dc: HDC) -> i32;
+    fn DrawTextW(h_dc: HDC, lp_ch: *const u16, n_count: i32, lp_rect: *mut RECT, u_format: UINT) -> i32;
+    fn SetTextColor(h_dc: HDC, color: COLORREF) -> COLORREF;
+    fn SetBkMode(h_dc: HDC, mode: i32) -> i32;
+    fn SelectObject(h_dc: HDC, h_object: isize) -> isize;
+    fn CreateSolidBrush(color: COLORREF) -> HBRUSH;
+    fn DeleteObject(ho: isize) -> BOOL;
+    fn CreatePen(style: i32, width: i32, color: COLORREF) -> HPEN;
+    fn MoveToEx(h_dc: HDC, x: i32, y: i32, lp_point: *mut u8) -> BOOL;
+    fn LineTo(h_dc: HDC, x: i32, y: i32) -> BOOL;
+    fn RoundRect(h_dc: HDC, left: i32, top: i32, right: i32, bottom: i32, width: i32, height: i32) -> BOOL;
+    fn GetSysColorBrush(n_index: i32) -> HBRUSH;
+    fn LoadCursorW(h_instance: HINSTANCE, lp_cursor_name: usize) -> isize;
+    fn SetFocus(h_wnd: HWND) -> HWND;
+    fn EnableWindow(h_wnd: HWND, b_enable: BOOL) -> BOOL;
+    fn GetDlgItem(h_wnd: HWND, n_id: i32) -> HWND;
+    fn PostMessageW(h_wnd: HWND, msg: UINT, w_param: WPARAM, l_param: LPARAM) -> BOOL;
+}
+
+#[link(name = "gdi32")]
+extern "system" {
+    fn CreateFontW(
+        c_height: i32, c_width: i32, c_escapement: i32, c_orientation: i32, c_weight: i32,
+        b_italic: DWORD, b_underline: DWORD, b_strike_out: DWORD, i_char_set: DWORD,
+        i_out_precision: DWORD, i_clip_precision: DWORD, i_quality: DWORD,
+        i_pitch_and_family: DWORD, psz_face_name: *const u16,
+    ) -> HFONT;
+    fn TextOutW(h_dc: HDC, x: i32, y: i32, lp_string: *const u16, c: i32) -> BOOL;
+}
+
+#[link(name = "kernel32")]
+extern "system" {
+    fn GetModuleHandleW(lp_module_name: *const u16) -> HINSTANCE;
+}
 
 #[link(name = "sacleaner_cpp", kind = "static")]
 extern "C" {
-    fn sa_clean(mask: c_uint) -> c_int;
-    fn sa_get_err(buf: *mut c_char, len: c_uint);
+    fn sa_clean(mask: u32) -> i32;
+    fn sa_get_err(buf: *mut i8, len: u32);
     fn sa_get_mem(total: *mut u64, used: *mut u64, free: *mut u64);
-    fn sa_is_admin() -> c_int;
+    fn sa_is_admin() -> i32;
     fn sa_uac_restart();
-    fn sa_estimate_clean(mask: c_uint) -> u64;
-    fn sa_check_excluded() -> c_int;
-    fn sa_set_auto_threshold(percent: c_uint);
-    fn sa_stop_auto_clean();
     fn sa_set_priority_low();
-    fn sa_add_exclusion(name: *const c_char);
-    fn sa_remove_exclusion(name: *const c_char);
-    fn sa_get_exclusions(buf: *mut c_char, len: c_int);
+    fn sa_set_auto_threshold(percent: u32);
+    fn sa_stop_auto_clean();
+    fn sa_estimate_clean(mask: u32) -> u64;
+    fn sa_estimate_each(out13: *mut u64);
+    fn sa_get_standby_size(size: *mut u64);
+    fn sa_get_detailed_mem(total: *mut u64, avail: *mut u64, standby: *mut u64, modified: *mut u64, cached: *mut u64);
+    fn sa_get_process_count() -> i32;
+    fn sa_set_aggressive(enabled: i32);
+    fn sa_get_last_cleaned_mb() -> u32;
 }
 
-extern "system" {
-    fn MessageBoxA(hWnd: isize, lpText: *const u8, lpCaption: *const u8, uType: u32) -> i32;
-    fn RegisterClassExW(lpwcx: *const WNDCLASSEXW) -> u16;
-    fn CreateWindowExW(dwExStyle: u32, lpClassName: *const u16, lpWindowName: *const u16,
-        dwStyle: u32, X: i32, Y: i32, nWidth: i32, nHeight: i32,
-        hWndParent: isize, hMenu: isize, hInstance: isize, lpParam: *mut ()) -> isize;
-    fn ShowWindow(hWnd: isize, nCmdShow: i32) -> i32;
-    fn UpdateWindow(hWnd: isize) -> i32;
-    fn GetMessageW(lpMsg: *mut MSG, hWnd: isize, wMsgFilterMin: u32, wMsgFilterMax: u32) -> i32;
-    fn TranslateMessage(lpMsg: *const MSG) -> i32;
-    fn DispatchMessageW(lpMsg: *const MSG) -> isize;
-    fn PostQuitMessage(nExitCode: i32);
-    fn DefWindowProcW(hWnd: isize, Msg: u32, wParam: usize, lParam: isize) -> isize;
-    fn PostMessageW(hWnd: isize, Msg: u32, wParam: usize, lParam: isize) -> i32;
-    fn SendMessageW(hWnd: isize, Msg: u32, wParam: usize, lParam: isize) -> isize;
-    fn CheckDlgButton(hDlg: isize, nIDButton: i32, uCheck: u32);
-    fn IsDlgButtonChecked(hDlg: isize, nIDButton: i32) -> u32;
-    fn SetDlgItemTextW(hDlg: isize, nIDDlgItem: i32, lpString: *const u16);
-    fn GetDlgItemTextW(hDlg: isize, nIDDlgItem: i32, lpString: *mut u16, nMaxCount: i32) -> i32;
-    fn GetModuleHandleW(lpModuleName: *const u16) -> isize;
-    fn CreateFontW(cHeight: i32, cWidth: i32, cEscapement: i32, cOrientation: i32,
-        cWeight: i32, bItalic: u32, bUnderline: u32, bStrikeOut: u32,
-        iCharSet: u32, iOutPrecision: u32, iClipPrecision: u32, iQuality: u32,
-        iPitchAndFamily: u32, pszFaceName: *const u16) -> isize;
-    fn GetDlgItem(hDlg: isize, nIDDlgItem: i32) -> isize;
-    fn SetWindowPos(hWnd: isize, hWndInsertAfter: isize, X: i32, Y: i32, cx: i32, cy: i32, uFlags: u32) -> i32;
-    fn SetWindowTextW(hWnd: isize, lpString: *const u16) -> i32;
-    fn IsWindowVisible(hWnd: isize) -> i32;
-    fn SetTimer(hWnd: isize, nIDEvent: usize, uElapse: u32, lpTimerFunc: usize) -> usize;
-    fn KillTimer(hWnd: isize, uIDEvent: usize) -> i32;
-    fn GetClientRect(hWnd: isize, lpRect: *mut RECT) -> i32;
-    fn InvalidateRect(hWnd: isize, lpRect: *const RECT, bErase: i32) -> i32;
-    fn SetBkColor(hdc: isize, color: u32) -> u32;
-    fn SetTextColor(hdc: isize, color: u32) -> u32;
-    fn CreateSolidBrush(color: u32) -> isize;
-    fn DeleteObject(hObject: isize) -> i32;
-    fn FillRect(hDC: isize, lprc: *const RECT, hbr: isize) -> i32;
-    fn GetDC(hWnd: isize) -> isize;
-    fn ReleaseDC(hWnd: isize, hDC: isize) -> i32;
-    fn SetWindowLongW(hWnd: isize, nIndex: i32, dwNewLong: i32) -> i32;
-    fn GetWindowLongW(hWnd: isize, nIndex: i32) -> i32;
-    fn GetWindow(hWnd: isize, uCmd: u32) -> isize;
+fn w(s: &str) -> Vec<u16> {
+    OsStr::new(s).encode_wide().chain(Some(0)).collect()
 }
 
-const WM_CREATE: u32 = 0x0001;
-const WM_COMMAND: u32 = 0x0111;
-const WM_DESTROY: u32 = 0x0002;
-const WM_TIMER: u32 = 0x0113;
-const WM_SIZE: u32 = 0x0005;
-const WM_ERASEBKGND: u32 = 0x0014;
-const WM_CTLCOLORSTATIC: u32 = 0x0138;
-const WM_CTLCOLORBTN: u32 = 0x0135;
-const WM_CTLCOLOREDIT: u32 = 0x0133;
-const WM_CTLCOLORLISTBOX: u32 = 0x0134;
-const WM_USER: u32 = 0x0400;
-const WM_CLEAN_DONE: u32 = WM_USER + 10;
-
-const BS_AUTOCHECKBOX: u32 = 0x00000003;
-const BS_PUSHBUTTON: u32 = 0x00000000;
-const BS_GROUPBOX: u32 = 0x00000007;
-const WS_CHILD: u32 = 0x40000000;
-const WS_VISIBLE: u32 = 0x10000000;
-const WS_TABSTOP: u32 = 0x00010000;
-const WS_BORDER: u32 = 0x00800000;
-const WS_VSCROLL: u32 = 0x00200000;
-const ES_NUMBER: u32 = 0x2000;
-const ES_AUTOHSCROLL: u32 = 0x0080;
-const LBS_STANDARD: u32 = 0xA00003;
-const LBS_NOTIFY: u32 = 0x0001;
-const WS_OVERLAPPEDWINDOW: u32 = 0x00CF0000;
-const WS_THICKFRAME: u32 = 0x00040000;
-const WS_MAXIMIZEBOX: u32 = 0x00010000;
-const WS_MINIMIZEBOX: u32 = 0x00020000;
-const WS_CAPTION: u32 = 0x00C00000;
-const WS_SYSMENU: u32 = 0x00080000;
-const SW_SHOW: i32 = 5;
-const SW_HIDE: i32 = 0;
-const MB_OK: u32 = 0x00000000;
-const MB_OKCANCEL: u32 = 0x00000001;
-const MB_ICONINFORMATION: u32 = 0x00000040;
-const MB_ICONWARNING: u32 = 0x00000030;
-const MB_ICONERROR: u32 = 0x00000010;
-const IDOK: i32 = 1;
-const IDCANCEL: i32 = 2;
-const BST_CHECKED: u32 = 1;
-const BST_UNCHECKED: u32 = 0;
-const COLOR_WINDOW: i32 = 5;
-const FW_BOLD: i32 = 700;
-const FW_NORMAL: i32 = 400;
-const GWL_STYLE: i32 = -16;
-
-const PBM_SETRANGE: u32 = WM_USER + 1;
-const PBM_SETPOS: u32 = WM_USER + 2;
-const PBM_SETSTEP: u32 = WM_USER + 4;
-const PBS_SMOOTH: u32 = 0x01;
-
-// Light colors
-const CLR_L_BG: u32 = 0xFFFFFF;
-const CLR_L_TEXT: u32 = 0x000000;
-const CLR_L_PANEL: u32 = 0xF0F0F0;
-const CLR_L_BAR: u32 = 0x00CC00;
-
-// Dark colors
-const CLR_D_BG: u32 = 0x1E1E2E;
-const CLR_D_TEXT: u32 = 0xCDD6F4;
-const CLR_D_PANEL: u32 = 0x2D2D44;
-const CLR_D_BAR: u32 = 0x89B4FA;
-const CLR_D_GROUP: u32 = 0x313244;
-
-const IDC_CHK_WS: i32 = 101;
-const IDC_CHK_SC: i32 = 102;
-const IDC_CHK_P0: i32 = 103;
-const IDC_CHK_SB: i32 = 104;
-const IDC_CHK_ML: i32 = 105;
-const IDC_CHK_CB: i32 = 106;
-const IDC_CHK_RG: i32 = 107;
-const IDC_CHK_FV: i32 = 108;
-const IDC_BTN_CLEAN: i32 = 201;
-const IDC_BTN_CLEAN_SAFE: i32 = 202;
-const IDC_BTN_SEL_ALL: i32 = 203;
-const IDC_BTN_SEL_NONE: i32 = 204;
-const IDC_BTN_ABOUT: i32 = 205;
-const IDC_STATIC_MEM: i32 = 301;
-const IDC_STATIC_EST: i32 = 302;
-const IDC_RAM_BAR: i32 = 401;
-const IDC_GRP_SAFE: i32 = 501;
-const IDC_GRP_SYS: i32 = 502;
-const IDC_GRP_AUTO: i32 = 503;
-const IDC_GRP_EXCL: i32 = 504;
-const IDC_CHK_AUTO: i32 = 601;
-const IDC_EDIT_THRESHOLD: i32 = 602;
-const IDC_STATIC_THRESHOLD: i32 = 603;
-const IDC_LST_EXCL: i32 = 701;
-const IDC_EDIT_EXCL: i32 = 702;
-const IDC_BTN_ADD_EXCL: i32 = 703;
-const IDC_BTN_REM_EXCL: i32 = 704;
-const IDC_STATIC_STATUS: i32 = 801;
-const IDC_CHK_DARK: i32 = 901;
-
-#[repr(C)]
-struct RECT { left: i32, top: i32, right: i32, bottom: i32 }
-#[repr(C)]
-struct WNDCLASSEXW { cbSize: u32, style: u32, lpfnWndProc: usize, cbClsExtra: i32,
-    cbWndExtra: i32, hInstance: isize, hIcon: isize, hCursor: isize,
-    hbrBackground: isize, lpszMenuName: *const u16, lpszClassName: *const u16, hIconSm: isize }
-#[repr(C)]
-struct MSG { hwnd: isize, message: u32, wParam: usize, lParam: isize, time: u32, pt_x: i32, pt_y: i32 }
-#[repr(C)]
-struct CREATESTRUCTW { lpCreateParams: *mut (), hInstance: isize, hMenu: isize,
-    hwndParent: isize, cy: i32, cx: i32, y: i32, x: i32, style: i32,
-    lpszName: *const u16, lpszClass: *const u16, dwExStyle: u32 }
-
-static CLEANING: AtomicBool = AtomicBool::new(false);
-static mut DARK_MODE: bool = false;
-static mut G_HWND: isize = 0;
-
-fn w(s: &str) -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() }
-
-fn msgbox(title: &str, text: &str, icon: u32) {
-    let t = CString::new(title).unwrap();
-    let m = CString::new(text).unwrap();
-    unsafe { MessageBoxA(0, m.as_ptr() as *const u8, t.as_ptr() as *const u8, MB_OK | icon); }
-}
-
-fn msgbox_yn(title: &str, text: &str, icon: u32) -> i32 {
-    let t = CString::new(title).unwrap();
-    let m = CString::new(text).unwrap();
-    unsafe { MessageBoxA(0, m.as_ptr() as *const u8, t.as_ptr() as *const u8, MB_OKCANCEL | icon) }
-}
-
-fn get_err() -> String {
-    let mut buf = vec![0u8; 4096];
-    unsafe { sa_get_err(buf.as_mut_ptr() as *mut c_char, 4096); }
-    unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char).to_string_lossy().into_owned() }
-}
-
-fn fmt_mem(b: u64) -> String {
-    let u = ["B","KB","MB","GB","TB"];
-    let mut s = b as f64; let mut i = 0;
-    while s >= 1024.0 && i < u.len()-1 { s /= 1024.0; i += 1; }
-    format!("{:.1} {}", s, u[i])
-}
-
-fn is_dark() -> bool {
-    unsafe { DARK_MODE }
-}
-
-fn bg_color() -> u32 { if is_dark() { CLR_D_BG } else { CLR_L_BG } }
-fn text_color() -> u32 { if is_dark() { CLR_D_TEXT } else { CLR_L_TEXT } }
-fn panel_color() -> u32 { if is_dark() { CLR_D_PANEL } else { CLR_L_PANEL } }
-fn bar_color() -> u32 { if is_dark() { CLR_D_BAR } else { CLR_L_BAR } }
-
-fn update_mem(hwnd: isize) {
-    let mut t: u64 = 0; let mut u: u64 = 0; let mut f: u64 = 0;
-    unsafe { sa_get_mem(&mut t, &mut u, &mut f); }
-    let pct = if t > 0 { (u * 100 / t) as u32 } else { 0 };
-    let info = format!("RAM: {} used / {} total ({} free) | {}% used", fmt_mem(u), fmt_mem(t), fmt_mem(f), pct);
-    unsafe { SetDlgItemTextW(hwnd, IDC_STATIC_MEM, w(&info).as_ptr()); }
+fn msgbox(title: &str, text: &str, flags: UINT) {
     unsafe {
-        SendMessageW(GetDlgItem(hwnd, IDC_RAM_BAR), PBM_SETPOS, pct as usize, 0);
+        MessageBoxW(0, w(text).as_ptr(), w(title).as_ptr(), flags | MB_OK);
     }
 }
 
-fn update_estimate(hwnd: isize) {
-    let m = get_mask(hwnd);
-    let est = unsafe { sa_estimate_clean(m) };
-    let txt = format!("Estimated to clean: ~{}", fmt_mem(est));
-    unsafe { SetDlgItemTextW(hwnd, IDC_STATIC_EST, w(&txt).as_ptr()); }
-}
-
-fn update_status(hwnd: isize, text: &str) {
-    unsafe { SetDlgItemTextW(hwnd, IDC_STATIC_STATUS, w(text).as_ptr()); }
-}
-
-fn get_mask(hwnd: isize) -> u32 {
-    let mut m: u32 = 0;
+fn msgbox_yn(title: &str, text: &str, flags: UINT) -> i32 {
     unsafe {
-        if IsDlgButtonChecked(hwnd, IDC_CHK_WS) == BST_CHECKED { m |= 0x01; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_SC) == BST_CHECKED { m |= 0x02; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_P0) == BST_CHECKED { m |= 0x04; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_SB) == BST_CHECKED { m |= 0x08; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_ML) == BST_CHECKED { m |= 0x10; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_CB) == BST_CHECKED { m |= 0x20; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_RG) == BST_CHECKED { m |= 0x40; }
-        if IsDlgButtonChecked(hwnd, IDC_CHK_FV) == BST_CHECKED { m |= 0x80; }
+        MessageBoxW(0, w(text).as_ptr(), w(title).as_ptr(), flags | MB_YESNO)
     }
-    m
 }
 
-fn set_chk(hwnd: isize, id: i32, chk: bool) {
-    unsafe { CheckDlgButton(hwnd, id, if chk { BST_CHECKED } else { BST_UNCHECKED }); }
-}
-
-fn sel_all(hwnd: isize, chk: bool) {
-    for id in [IDC_CHK_WS, IDC_CHK_SC, IDC_CHK_P0, IDC_CHK_SB, IDC_CHK_ML, IDC_CHK_CB, IDC_CHK_RG, IDC_CHK_FV] {
-        set_chk(hwnd, id, chk);
-    }
-    update_estimate(hwnd);
-}
-
-fn get_threshold(hwnd: isize) -> u32 {
-    let mut buf = vec![0u16; 16];
+fn set_text(hwnd: HWND, id: i32, text: &str) {
     unsafe {
-        let len = GetDlgItemTextW(hwnd, IDC_EDIT_THRESHOLD, buf.as_mut_ptr(), 16);
-        if len > 0 {
-            let s = String::from_utf16_lossy(&buf[..len as usize]);
-            if let Ok(n) = s.parse::<u32>() {
-                if n >= 10 && n <= 95 { return n; }
+        let ctrl = GetDlgItem(hwnd, id);
+        if ctrl != 0 {
+            SetWindowTextW(ctrl, w(text).as_ptr());
+        }
+    }
+}
+
+fn is_checked(hwnd: HWND, id: i32) -> bool {
+    unsafe {
+        let ctrl = GetDlgItem(hwnd, id);
+        if ctrl == 0 { return false; }
+        SendMessageW(ctrl, BM_GETCHECK, 0, 0) == BST_CHECKED as isize
+    }
+}
+
+fn set_check(hwnd: HWND, id: i32, checked: bool) {
+    unsafe {
+        let ctrl = GetDlgItem(hwnd, id);
+        if ctrl != 0 {
+            SendMessageW(ctrl, BM_SETCHECK, if checked { BST_CHECKED } else { BST_UNCHECKED }, 0);
+        }
+    }
+}
+
+fn get_mask(hwnd: HWND) -> u32 {
+    let mut mask = 0u32;
+    if is_checked(hwnd, IDC_CHK_WS) { mask |= 0x01; }
+    if is_checked(hwnd, IDC_CHK_CACHE) { mask |= 0x02; }
+    if is_checked(hwnd, IDC_CHK_STANDBY) { mask |= 0x04; }
+    if is_checked(hwnd, IDC_CHK_MODIFIED) { mask |= 0x08; }
+    if is_checked(hwnd, IDC_CHK_REGISTRY) { mask |= 0x10; }
+    if is_checked(hwnd, IDC_CHK_COMBINE) { mask |= 0x20; }
+    if is_checked(hwnd, IDC_CHK_LOWPRIO) { mask |= 0x40; }
+    if is_checked(hwnd, IDC_CHK_FLUSH) { mask |= 0x80; }
+    if is_checked(hwnd, IDC_CHK_CLIP) { mask |= 0x100; }
+    if is_checked(hwnd, IDC_CHK_DNS) { mask |= 0x200; }
+    if is_checked(hwnd, IDC_CHK_TEMP) { mask |= 0x400; }
+    if is_checked(hwnd, IDC_CHK_PREFETCH) { mask |= 0x800; }
+    if is_checked(hwnd, IDC_CHK_THUMB) { mask |= 0x1000; }
+    mask
+}
+
+fn fmt_bytes(b: u64) -> String {
+    if b >= 1024 * 1024 * 1024 {
+        format!("{:.2} GB", b as f64 / (1024.0 * 1024.0 * 1024.0))
+    } else if b >= 1024 * 1024 {
+        format!("{:.1} MB", b as f64 / (1024.0 * 1024.0))
+    } else {
+        format!("{} KB", b / 1024)
+    }
+}
+
+fn update_mem(hwnd: HWND) {
+    unsafe {
+        let mut total = 0u64;
+        let mut avail = 0u64;
+        let mut standby = 0u64;
+        let mut modified = 0u64;
+        let mut cached = 0u64;
+        sa_get_detailed_mem(&mut total, &mut avail, &mut standby, &mut modified, &mut cached);
+        let used = total.saturating_sub(avail);
+        let pct = if total > 0 { (used * 100) / total } else { 0 };
+
+        let info = format!(
+            "RAM  {} / {}   ({}% used)   Free: {}",
+            fmt_bytes(used), fmt_bytes(total), pct, fmt_bytes(avail)
+        );
+        set_text(hwnd, IDC_MEM_INFO, &info);
+
+        let st = format!(
+            "Standby: {}   |   Modified: {}   |   Cache: {}",
+            fmt_bytes(standby), fmt_bytes(modified), fmt_bytes(cached)
+        );
+        set_text(hwnd, IDC_STANDBY, &st);
+
+        let pc = sa_get_process_count();
+        set_text(hwnd, IDC_PROC_COUNT, &format!("Processes: {}", pc));
+    }
+}
+
+fn update_estimate(hwnd: HWND) {
+    let mask = get_mask(hwnd);
+    unsafe {
+        let mut each = [0u64; 13];
+        sa_estimate_each(each.as_mut_ptr());
+        let labels = [
+            (0x01, 0, "WS"),
+            (0x02, 1, "Cache"),
+            (0x04, 2, "Standby"),
+            (0x08, 3, "Modified"),
+            (0x10, 4, "Reg"),
+            (0x20, 5, "Combine"),
+            (0x40, 6, "LowPrio"),
+            (0x80, 7, "Flush"),
+            (0x100, 8, "Clip"),
+            (0x200, 9, "DNS"),
+            (0x400, 10, "Temp"),
+            (0x800, 11, "Prefetch"),
+            (0x1000, 12, "Thumb"),
+        ];
+        let mut parts: Vec<String> = Vec::new();
+        let mut total = 0u64;
+        for (bit, idx, name) in labels {
+            if mask & bit != 0 {
+                let v = each[idx];
+                total += v;
+                if v > 0 {
+                    parts.push(format!("{} {}", name, fmt_bytes(v)));
+                }
             }
         }
-    }
-    60
-}
-
-fn refresh_exclusion_list(hwnd: isize) {
-    let mut buf = vec![0u8; 4096];
-    unsafe { sa_get_exclusions(buf.as_mut_ptr() as *mut c_char, 4096); }
-    let list = unsafe { CStr::from_ptr(buf.as_ptr() as *const c_char).to_string_lossy() };
-    unsafe { SendMessageW(GetDlgItem(hwnd, IDC_LST_EXCL), 0x0184, 0, 0); }
-    if !list.is_empty() {
-        for item in list.split(", ") {
-            let trimmed = item.trim();
-            if !trimmed.is_empty() {
-                unsafe { SendMessageW(GetDlgItem(hwnd, IDC_LST_EXCL), 0x0180, 0, w(trimmed).as_ptr() as isize); }
-            }
-        }
+        let detail = if parts.is_empty() {
+            "none selected".to_string()
+        } else {
+            parts.join(" | ")
+        };
+        set_text(hwnd, IDC_ESTIMATE, &format!("Total ~{}   [{}]", fmt_bytes(total), detail));
     }
 }
 
-fn do_clean_async(hwnd: isize, mask: u32) {
-    if CLEANING.swap(true, Ordering::SeqCst) {
-        msgbox("Busy", "Cleaning already in progress!", MB_ICONWARNING);
-        return;
+
+fn help_for(id: i32) -> &'static str {
+    match id {
+        IDC_CHK_WS => "Working Set: Forces processes to release non-essential pages from their working set. Frees RAM held by idle apps without closing them. Safe and fast.",
+        IDC_CHK_CACHE => "System Cache: Shrinks the Windows file cache (standby mapped files). Releases cached file data so free RAM increases. Very effective on systems with large file cache.",
+        IDC_CHK_STANDBY => "Standby List: Purges the standby page list (cached pages ready for reuse). Often frees the largest amount of RAM. Core of memory cleaners.",
+        IDC_CHK_MODIFIED => "Modified List: Flushes modified pages to disk then frees them. Reclaims dirty pages waiting for write. Slight disk activity possible.",
+        IDC_CHK_REGISTRY => "Registry: Requests registry hive memory reduction. Trims paged registry data held in RAM. Low impact, small reclaim.",
+        IDC_CHK_COMBINE => "Combine Pages: Asks the kernel to combine identical memory pages (page combining). Saves RAM when many processes share same content.",
+        IDC_CHK_LOWPRIO => "Low Priority: Purges low-priority standby pages first. Gentler than full standby purge; good for background cleanup.",
+        IDC_CHK_FLUSH => "Flush Volumes: Calls FlushFileBuffers on fixed drives. Ensures pending writes hit disk; pairs well with Modified List.",
+        IDC_CHK_CLIP => "Clipboard: Clears the Windows clipboard contents from memory. Instant, tiny reclaim, useful after large copy operations.",
+        IDC_CHK_DNS => "DNS Cache: Runs ipconfig /flushdns. Clears resolved hostnames. Small RAM win; also forces fresh DNS lookups.",
+        IDC_CHK_TEMP => "Temp Files: Deletes files under user Temp, LocalAppData\\Temp, and Windows\\Temp. Can free hundreds of MB on disk and related cache.",
+        IDC_CHK_PREFETCH => "Prefetch: Clears Windows Prefetch folder. Frees small RAM/disk related to app launch traces. Harmless; Windows rebuilds as needed.",
+        IDC_CHK_THUMB => "Thumbnail Cache: Deletes Explorer thumbcache_*.db files. Reclaims space from image/video thumbnail database.",
+        IDC_BTN_CLEAN => "CLEAN NOW: Runs all selected cleaners in parallel threads, measures free RAM before/after, reports MB recovered.",
+        IDC_BTN_SELECT_SAFE => "Safe Profile: Selects only low-risk high-value options (Working Set, Cache, Standby, Modified, Clipboard, DNS).",
+        IDC_BTN_SELECT_ALL => "Select All: Enables every cleaner including Temp/Prefetch/Thumbnails. Stronger reclaim, more disk work.",
+        IDC_BTN_AGGRESSIVE => "Aggressive: Faster Nt calls, second standby pass, shorter timeouts. More RAM reclaimed, slightly higher CPU spike.",
+        IDC_BTN_AUTO => "Start Auto: Background thread checks RAM usage. When used% >= threshold, runs Safe clean automatically.",
+        IDC_BTN_STOP_AUTO => "Stop Auto: Stops the background auto-clean thread immediately.",
+        IDC_BTN_THEME => "Theme: Toggle true black Dark mode and Light mode. Affects background and text colors.",
+        IDC_BTN_BG => "BG Shade: Cycles dark background shades (pure black, soft black, blue-black, red-black). Dark mode only.",
+        IDC_THRESHOLD_EDIT => "Threshold %: Auto-clean triggers when used RAM reaches this percent (1-99). Default 75.",
+        _ => "SA Cleaner — select options, then CLEAN NOW. Hover controls for details.",
     }
-    update_status(hwnd, "Cleaning in progress...");
-    thread::spawn(move || {
-        let res = unsafe { sa_clean(mask) };
-        let _txt = get_err();
-        unsafe { PostMessageW(hwnd, WM_CLEAN_DONE, res as usize, 0); }
-    });
 }
 
-fn apply_dark_mode(hwnd: isize, dark: bool) {
+fn update_status(hwnd: HWND, text: &str) {
+    set_text(hwnd, IDC_STATUS, text);
+}
+
+fn create_font(size: i32, bold: bool, name: &str) -> HFONT {
     unsafe {
-        DARK_MODE = dark;
-        InvalidateRect(hwnd, ptr::null(), 1);
-        // Force redraw all controls
-        let mut child = GetWindow(hwnd, 5); // GW_CHILD
-        while child != 0 {
-            InvalidateRect(child, ptr::null(), 1);
-            child = GetWindow(child, 2); // GW_HWNDNEXT
-        }
+        CreateFontW(
+            size, 0, 0, 0,
+            if bold { FW_BOLD } else { FW_NORMAL },
+            0, 0, 0, DEFAULT_CHARSET,
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE, w(name).as_ptr(),
+        )
     }
 }
 
-fn create_ui(hwnd: isize, hinst: isize) {
-    let f = unsafe { CreateFontW(13,0,0,0,FW_NORMAL,0,0,0,0,0,0,0,0, w("Segoe UI").as_ptr()) };
-    let fb = unsafe { CreateFontW(14,0,0,0,FW_BOLD,0,0,0,0,0,0,0,0, w("Segoe UI").as_ptr()) };
-    let ftitle = unsafe { CreateFontW(20,0,0,0,FW_BOLD,0,0,0,0,0,0,0,0, w("Segoe UI").as_ptr()) };
-
-    // Title
+fn create_ctrl(
+    parent: HWND, class: &str, text: &str, style: DWORD,
+    x: i32, y: i32, w: i32, h: i32, id: i32, hinst: HINSTANCE,
+) -> HWND {
     unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("SA Cleaner v1.0 - By Seif Afandi").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 15,10,500,28, hwnd, 0, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, ftitle as usize, 0);
+        CreateWindowExW(
+            0, OsStr::new(class).encode_wide().chain(Some(0)).collect::<Vec<_>>().as_ptr(),
+            OsStr::new(text).encode_wide().chain(Some(0)).collect::<Vec<_>>().as_ptr(),
+            WS_CHILD | WS_VISIBLE | style,
+            x, y, w, h, parent, id as HMENU, hinst, ptr::null_mut(),
+        )
     }
+}
 
-    // Dark mode toggle
-    unsafe {
-        let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w("Dark Mode").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX|WS_TABSTOP, 580,12,100,20, hwnd, IDC_CHK_DARK as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
+static mut G_FONT_TITLE: HFONT = 0;
+static mut G_FONT_NORMAL: HFONT = 0;
+static mut G_FONT_SMALL: HFONT = 0;
+static mut G_BRUSH_BG: HBRUSH = 0;
+static mut G_BRUSH_PANEL: HBRUSH = 0;
+static mut G_AUTO_ON: bool = false;
+static mut G_AGGRESSIVE: bool = false;
+static mut G_DARK: bool = true;
+static mut G_BG_COLOR: COLORREF = CLR_DARK_BG;
+static mut G_TEXT_COLOR: COLORREF = CLR_DARK_TEXT;
+static mut G_TRAY: bool = false;
+static mut G_HWND: HWND = 0;
+static mut G_CLEANING: bool = false;
+
+unsafe fn apply_theme(hwnd: HWND) {
+    if G_BRUSH_BG != 0 { DeleteObject(G_BRUSH_BG); }
+    if G_BRUSH_PANEL != 0 { DeleteObject(G_BRUSH_PANEL); }
+    if G_DARK {
+        G_BG_COLOR = CLR_DARK_BG;
+        G_TEXT_COLOR = CLR_DARK_TEXT;
+        G_BRUSH_BG = CreateSolidBrush(CLR_DARK_BG);
+        G_BRUSH_PANEL = CreateSolidBrush(CLR_DARK_PANEL);
+        set_text(hwnd, IDC_BTN_THEME, "Theme: Dark");
+    } else {
+        G_BG_COLOR = CLR_LIGHT_BG;
+        G_TEXT_COLOR = CLR_LIGHT_TEXT;
+        G_BRUSH_BG = CreateSolidBrush(CLR_LIGHT_BG);
+        G_BRUSH_PANEL = CreateSolidBrush(CLR_LIGHT_PANEL);
+        set_text(hwnd, IDC_BTN_THEME, "Theme: Light");
     }
+    InvalidateRect(hwnd, ptr::null(), 1);
+}
 
-    // Memory info
-    unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 15,44,420,20, hwnd, IDC_STATIC_MEM as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, fb as usize, 0);
+
+unsafe fn tray_add(hwnd: HWND) {
+    let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
+    nid.cb_size = std::mem::size_of::<NOTIFYICONDATAW>() as DWORD;
+    nid.h_wnd = hwnd;
+    nid.u_id = 1;
+    nid.u_flags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+    nid.u_callback_message = WM_TRAYICON;
+    nid.h_icon = LoadIconW(0, IDI_APPLICATION);
+    let tip = w("SA Cleaner — running in background");
+    for (i, ch) in tip.iter().take(127).enumerate() {
+        nid.sz_tip[i] = *ch;
     }
+    Shell_NotifyIconW(NIM_ADD, &mut nid);
+    G_TRAY = true;
+}
 
-    // RAM Bar
-    unsafe {
-        CreateWindowExW(0, w("msctls_progress32").as_ptr(), w("").as_ptr(),
-            WS_CHILD|WS_VISIBLE|PBS_SMOOTH, 445,44,240,20, hwnd, IDC_RAM_BAR as isize, hinst, ptr::null_mut());
-        SendMessageW(GetDlgItem(hwnd, IDC_RAM_BAR), PBM_SETRANGE, 0, (0 << 16) | 100);
-    }
+unsafe fn tray_remove(hwnd: HWND) {
+    if !G_TRAY { return; }
+    let mut nid: NOTIFYICONDATAW = std::mem::zeroed();
+    nid.cb_size = std::mem::size_of::<NOTIFYICONDATAW>() as DWORD;
+    nid.h_wnd = hwnd;
+    nid.u_id = 1;
+    Shell_NotifyIconW(NIM_DELETE, &mut nid);
+    G_TRAY = false;
+}
 
-    // Estimate
-    unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("Estimated to clean: ~0 MB").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 15,68,480,18, hwnd, IDC_STATIC_EST as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
-    }
+unsafe fn hide_to_tray(hwnd: HWND) {
+    ShowWindow(hwnd, SW_HIDE);
+    if !G_TRAY { tray_add(hwnd); }
+}
 
-    // Status
-    unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("Ready").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 15,90,480,18, hwnd, IDC_STATIC_STATUS as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
-    }
+unsafe fn restore_from_tray(hwnd: HWND) {
+    ShowWindow(hwnd, SW_RESTORE);
+    SetFocus(hwnd);
+}
 
-    // Safe Regions Group
-    unsafe {
-        CreateWindowExW(0, w("BUTTON").as_ptr(), w("SAFE REGIONS (Recommended)").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_GROUPBOX, 10,118,320,220, hwnd, IDC_GRP_SAFE as isize, hinst, ptr::null_mut());
-    }
-
-    let safe = [
-        (IDC_CHK_WS,"Working Set","~150 MB",138,true),
-        (IDC_CHK_SC,"System Cache","~400 MB",160,true),
-        (IDC_CHK_P0,"Standby Priority-0","~300 MB",182,true),
-        (IDC_CHK_CB,"Combine Memory","~100 MB",204,true),
-        (IDC_CHK_RG,"Registry Cache","~50 MB",226,true),
-        (IDC_CHK_FV,"Flush Volume Cache","~0 MB",248,true),
+unsafe fn cycle_bg(hwnd: HWND) {
+    if !G_DARK { return; }
+    const PRESETS: [COLORREF; 5] = [
+        0x00000000,
+        0x000A0A0A,
+        0x00101010,
+        0x00080812,
+        0x00120000,
     ];
-    for (id,txt,est,y,chk) in safe {
-        let label = format!("{} ({})", txt, est);
-        unsafe {
-            let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w(&label).as_ptr(),
-                WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX|WS_TABSTOP, 22,y,290,18, hwnd, id as isize, hinst, ptr::null_mut());
-            SendMessageW(h, 0x0030, f as usize, 0);
-            if chk { CheckDlgButton(hwnd, id, BST_CHECKED); }
-        }
-    }
-
-    // System Regions Group (merged with safe in layout for space, or separate)
-    unsafe {
-        CreateWindowExW(0, w("BUTTON").as_ptr(), w("SYSTEM REGIONS (Advanced)").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_GROUPBOX, 340,118,340,100, hwnd, IDC_GRP_SYS as isize, hinst, ptr::null_mut());
-    }
-
-    let system = [
-        (IDC_CHK_SB,"Standby List","~800 MB",138,false),
-        (IDC_CHK_ML,"Modified Page List","~200 MB",160,false),
-    ];
-    for (id,txt,est,y,chk) in system {
-        let label = format!("{} ({})", txt, est);
-        unsafe {
-            let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w(&label).as_ptr(),
-                WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX|WS_TABSTOP, 352,y,320,18, hwnd, id as isize, hinst, ptr::null_mut());
-            SendMessageW(h, 0x0030, f as usize, 0);
-            if chk { CheckDlgButton(hwnd, id, BST_CHECKED); }
-        }
-    }
-
-    // Auto-Clean Group
-    unsafe {
-        CreateWindowExW(0, w("BUTTON").as_ptr(), w("AUTO-CLEAN MONITOR").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_GROUPBOX, 340,228,340,110, hwnd, IDC_GRP_AUTO as isize, hinst, ptr::null_mut());
-    }
-
-    unsafe {
-        let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w("Enable Auto-Clean").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_AUTOCHECKBOX|WS_TABSTOP, 352,248,200,18, hwnd, IDC_CHK_AUTO as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
-    }
-
-    unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("Threshold %:").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 352,272,80,18, hwnd, IDC_STATIC_THRESHOLD as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
-    }
-
-    unsafe {
-        CreateWindowExW(0, w("EDIT").as_ptr(), w("60").as_ptr(),
-            WS_CHILD|WS_VISIBLE|WS_BORDER|ES_NUMBER|ES_AUTOHSCROLL|WS_TABSTOP, 440,270,50,20, hwnd, IDC_EDIT_THRESHOLD as isize, hinst, ptr::null_mut());
-    }
-
-    unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("(10-95%)").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 496,272,80,18, hwnd, 0, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
-    }
-
-    // Exclusions Group
-    unsafe {
-        CreateWindowExW(0, w("BUTTON").as_ptr(), w("PROCESS EXCLUSIONS").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_GROUPBOX, 10,348,670,180, hwnd, IDC_GRP_EXCL as isize, hinst, ptr::null_mut());
-    }
-
-    unsafe {
-        let h = CreateWindowExW(0, w("STATIC").as_ptr(), w("Built-in: explorer, csrss, lsass, svchost, dwm, etc.").as_ptr(),
-            WS_CHILD|WS_VISIBLE, 22,368,640,16, hwnd, 0, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, f as usize, 0);
-    }
-
-    unsafe {
-        CreateWindowExW(0, w("LISTBOX").as_ptr(), w("").as_ptr(),
-            WS_CHILD|WS_VISIBLE|WS_BORDER|WS_VSCROLL|LBS_NOTIFY|LBS_STANDARD|WS_TABSTOP,
-            22,388,280,120, hwnd, IDC_LST_EXCL as isize, hinst, ptr::null_mut());
-    }
-
-    unsafe {
-        CreateWindowExW(0, w("EDIT").as_ptr(), w("").as_ptr(),
-            WS_CHILD|WS_VISIBLE|WS_BORDER|ES_AUTOHSCROLL|WS_TABSTOP,
-            316,388,240,22, hwnd, IDC_EDIT_EXCL as isize, hinst, ptr::null_mut());
-    }
-
-    unsafe {
-        let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w("Add").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON|WS_TABSTOP, 566,388,60,24, hwnd, IDC_BTN_ADD_EXCL as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, fb as usize, 0);
-    }
-
-    unsafe {
-        let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w("Remove").as_ptr(),
-            WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON|WS_TABSTOP, 636,388,60,24, hwnd, IDC_BTN_REM_EXCL as isize, hinst, ptr::null_mut());
-        SendMessageW(h, 0x0030, fb as usize, 0);
-    }
-
-    // Buttons row
-    let btns = [
-        (IDC_BTN_CLEAN,"Clean Selected",10,536,140,30),
-        (IDC_BTN_CLEAN_SAFE,"Clean Safe Only",160,536,140,30),
-        (IDC_BTN_SEL_ALL,"Select All",310,536,100,30),
-        (IDC_BTN_SEL_NONE,"Select None",420,536,100,30),
-        (IDC_BTN_ABOUT,"About",540,536,80,30),
-    ];
-    for (id,txt,x,y,wd,ht) in btns {
-        unsafe {
-            let h = CreateWindowExW(0, w("BUTTON").as_ptr(), w(txt).as_ptr(),
-                WS_CHILD|WS_VISIBLE|BS_PUSHBUTTON|WS_TABSTOP, x,y,wd,ht, hwnd, id as isize, hinst, ptr::null_mut());
-            SendMessageW(h, 0x0030, fb as usize, 0);
-        }
-    }
-
-    update_mem(hwnd);
-    update_estimate(hwnd);
-    refresh_exclusion_list(hwnd);
+    static mut IDX: usize = 0;
+    IDX = (IDX + 1) % PRESETS.len();
+    G_BG_COLOR = PRESETS[IDX];
+    if G_BRUSH_BG != 0 { DeleteObject(G_BRUSH_BG); }
+    G_BRUSH_BG = CreateSolidBrush(G_BG_COLOR);
+    InvalidateRect(hwnd, ptr::null(), 1);
 }
 
-extern "system" fn wndproc(hwnd: isize, msg: u32, wparam: usize, lparam: isize) -> isize {
+unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match msg {
         WM_CREATE => {
-            let cs = lparam as *const CREATESTRUCTW;
-            create_ui(hwnd, unsafe { (*cs).hInstance });
-            unsafe {
-                G_HWND = hwnd;
-                SetTimer(hwnd, 1, 2000, 0);
+            let hinst = GetModuleHandleW(ptr::null());
+            G_FONT_TITLE = create_font(26, true, "Segoe UI");
+            G_FONT_NORMAL = create_font(15, false, "Segoe UI");
+            G_FONT_SMALL = create_font(13, false, "Segoe UI");
+            G_DARK = true;
+            G_BG_COLOR = CLR_DARK_BG;
+            G_TEXT_COLOR = CLR_DARK_TEXT;
+            G_BRUSH_BG = CreateSolidBrush(CLR_DARK_BG);
+            G_BRUSH_PANEL = CreateSolidBrush(CLR_DARK_PANEL);
+
+            let t = create_ctrl(hwnd, "STATIC", "SA Cleaner  v2.0", SS_CENTER, 20, 10, 700, 32, IDC_TITLE, hinst);
+            SendMessageW(t, 0x0030, G_FONT_TITLE as WPARAM, 1);
+
+            let m = create_ctrl(hwnd, "STATIC", "Loading memory...", SS_LEFT, 30, 50, 680, 20, IDC_MEM_INFO, hinst);
+            SendMessageW(m, 0x0030, G_FONT_NORMAL as WPARAM, 1);
+
+            let s = create_ctrl(hwnd, "STATIC", "", SS_LEFT, 30, 72, 680, 18, IDC_STANDBY, hinst);
+            SendMessageW(s, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let p = create_ctrl(hwnd, "STATIC", "Processes: -", SS_LEFT, 30, 94, 200, 16, IDC_PROC_COUNT, hinst);
+            SendMessageW(p, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let lf = create_ctrl(hwnd, "STATIC", "Last freed: -", SS_LEFT, 250, 94, 250, 16, IDC_LAST_FREED, hinst);
+            SendMessageW(lf, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let checks = [
+                (IDC_CHK_WS, "Working Set", 28, 128),
+                (IDC_CHK_CACHE, "System Cache", 200, 128),
+                (IDC_CHK_STANDBY, "Standby List", 380, 128),
+                (IDC_CHK_MODIFIED, "Modified List", 555, 128),
+                (IDC_CHK_REGISTRY, "Registry", 28, 160),
+                (IDC_CHK_COMBINE, "Combine Pages", 200, 160),
+                (IDC_CHK_LOWPRIO, "Low Priority", 380, 160),
+                (IDC_CHK_FLUSH, "Flush Volumes", 555, 160),
+                (IDC_CHK_CLIP, "Clipboard", 28, 192),
+                (IDC_CHK_DNS, "DNS Cache", 200, 192),
+                (IDC_CHK_TEMP, "Temp Files", 380, 192),
+                (IDC_CHK_PREFETCH, "Prefetch", 555, 192),
+                (IDC_CHK_THUMB, "Thumbnail Cache", 28, 224),
+            ];
+            for (id, text, x, y) in checks {
+                let c = create_ctrl(hwnd, "BUTTON", text, BS_AUTOCHECKBOX | WS_TABSTOP, x, y, 170, 24, id, hinst);
+                SendMessageW(c, 0x0030, G_FONT_SMALL as WPARAM, 1);
+                if matches!(id, IDC_CHK_WS | IDC_CHK_CACHE | IDC_CHK_STANDBY | IDC_CHK_MODIFIED | IDC_CHK_CLIP | IDC_CHK_DNS) {
+                    set_check(hwnd, id, true);
+                }
+            }
+
+            let btn_clean = create_ctrl(hwnd, "BUTTON", "CLEAN NOW", BS_DEFPUSHBUTTON | WS_TABSTOP, 28, 270, 140, 34, IDC_BTN_CLEAN, hinst);
+            SendMessageW(btn_clean, 0x0030, G_FONT_NORMAL as WPARAM, 1);
+
+            let btn_safe = create_ctrl(hwnd, "BUTTON", "Safe Profile", BS_PUSHBUTTON | WS_TABSTOP, 180, 270, 105, 34, IDC_BTN_SELECT_SAFE, hinst);
+            SendMessageW(btn_safe, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_all = create_ctrl(hwnd, "BUTTON", "Select All", BS_PUSHBUTTON | WS_TABSTOP, 295, 270, 95, 34, IDC_BTN_SELECT_ALL, hinst);
+            SendMessageW(btn_all, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_agg = create_ctrl(hwnd, "BUTTON", "Aggressive: OFF", BS_PUSHBUTTON | WS_TABSTOP, 400, 270, 125, 34, IDC_BTN_AGGRESSIVE, hinst);
+            SendMessageW(btn_agg, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_theme = create_ctrl(hwnd, "BUTTON", "Theme: Dark", BS_PUSHBUTTON | WS_TABSTOP, 535, 270, 100, 34, IDC_BTN_THEME, hinst);
+            SendMessageW(btn_theme, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_tray = create_ctrl(hwnd, "BUTTON", "To Tray", BS_PUSHBUTTON | WS_TABSTOP, 645, 270, 80, 34, IDC_BTN_TRAY, hinst);
+            SendMessageW(btn_tray, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let al = create_ctrl(hwnd, "STATIC", "Auto-Clean when RAM usage exceeds threshold", SS_LEFT, 28, 320, 420, 18, IDC_AUTO_LABEL, hinst);
+            SendMessageW(al, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_auto = create_ctrl(hwnd, "BUTTON", "Start Auto", BS_PUSHBUTTON | WS_TABSTOP, 28, 348, 120, 30, IDC_BTN_AUTO, hinst);
+            SendMessageW(btn_auto, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_stop = create_ctrl(hwnd, "BUTTON", "Stop Auto", BS_PUSHBUTTON | WS_TABSTOP, 160, 348, 100, 30, IDC_BTN_STOP_AUTO, hinst);
+            SendMessageW(btn_stop, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let btn_bg = create_ctrl(hwnd, "BUTTON", "BG Shade", BS_PUSHBUTTON | WS_TABSTOP, 270, 348, 90, 30, IDC_BTN_BG, hinst);
+            SendMessageW(btn_bg, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let est = create_ctrl(hwnd, "STATIC", "Estimated reclaim: -", SS_LEFT, 28, 395, 700, 36, IDC_ESTIMATE, hinst);
+            SendMessageW(est, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let st = create_ctrl(hwnd, "STATIC", "Ready", SS_LEFT, 28, 435, 700, 18, IDC_STATUS, hinst);
+            SendMessageW(st, 0x0030, G_FONT_NORMAL as WPARAM, 1);
+
+            let hl = create_ctrl(hwnd, "STATIC", "Click any option for a detailed description.", SS_LEFT, 28, 458, 700, 55, IDC_HELP, hinst);
+            SendMessageW(hl, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            let tl = create_ctrl(hwnd, "STATIC", "Threshold %:", SS_LEFT, 380, 352, 90, 18, IDC_THRESHOLD_LABEL, hinst);
+            SendMessageW(tl, 0x0030, G_FONT_SMALL as WPARAM, 1);
+            let te = create_ctrl(hwnd, "EDIT", "75", WS_BORDER | ES_NUMBER | ES_AUTOHSCROLL | WS_TABSTOP, 475, 348, 48, 26, IDC_THRESHOLD_EDIT, hinst);
+            SendMessageW(te, 0x0030, G_FONT_SMALL as WPARAM, 1);
+
+            G_HWND = hwnd;
+            SetTimer(hwnd, 1, 2000, 0);
+            update_mem(hwnd);
+            update_estimate(hwnd);
+            0
+        }
+        WM_ERASEBKGND => {
+            let mut rc = RECT { left: 0, top: 0, right: 0, bottom: 0 };
+            GetClientRect(hwnd, &mut rc);
+            FillRect(wparam as HDC, &rc, G_BRUSH_BG);
+            1
+        }
+        WM_CTLCOLORSTATIC | WM_CTLCOLORBTN => {
+            let hdc = wparam as HDC;
+            SetTextColor(hdc, G_TEXT_COLOR);
+            SetBkMode(hdc, TRANSPARENT);
+            G_BRUSH_BG
+        }
+        WM_APP_CLEAN_DONE => {
+            G_CLEANING = false;
+            let res = wparam as i32;
+            let mut buf = [0i8; 512];
+            sa_get_err(buf.as_mut_ptr(), 512);
+            let txt = std::ffi::CStr::from_ptr(buf.as_ptr()).to_string_lossy().into_owned();
+            let freed = sa_get_last_cleaned_mb();
+            set_text(hwnd, IDC_LAST_FREED, &format!("Last freed: {} MB", freed));
+            if res == -1 {
+                msgbox("Admin Required", &txt, MB_ICONERROR);
+            } else if res == 0 {
+                msgbox("Success", &format!("{} | Freed approximately {} MB", txt, freed), MB_ICONINFORMATION);
+            } else {
+                msgbox("Partial", &txt, MB_ICONWARNING);
+            }
+            update_status(hwnd, "Ready");
+            update_mem(hwnd);
+            update_estimate(hwnd);
+            0
+        }
+        WM_TRAYICON => {
+            // left double-click restore
+            let mouse = (wparam >> 16) as u32; // not used; lparam has msg
+            let msg_tray = lparam as u32;
+            if msg_tray == 0x0203 || msg_tray == 0x0201 { // WM_LBUTTONDBLCLK / DOWN
+                restore_from_tray(hwnd);
             }
             0
         }
+        WM_SYSCOMMAND => {
+            let cmd = wparam & 0xFFF0;
+            if cmd == SC_MINIMIZE {
+                hide_to_tray(hwnd);
+                return 0;
+            }
+            // block maximize / fullscreen-style
+            if cmd == 0xF030 || cmd == 0xF032 { // SC_MAXIMIZE / SC_MAXIMIZE2
+                return 0;
+            }
+            DefWindowProcW(hwnd, msg, wparam, lparam)
+        }
         WM_COMMAND => {
             let id = (wparam & 0xFFFF) as i32;
-            let notif = (wparam >> 16) as u32;
-            if notif == 0 || notif == 1 || notif == 5 {
-                match id {
-                    IDC_BTN_CLEAN => {
-                        let m = get_mask(hwnd);
-                        if m == 0 { msgbox("SA Cleaner", "Select at least one region!", MB_ICONWARNING); }
-                        else {
-                            let sys = (m & 0x08) != 0 || (m & 0x10) != 0;
-                            if sys {
-                                let r = msgbox_yn("System Regions", 
-                                    "Standby/Modified may pause 1-3s. Continue?", MB_ICONWARNING);
-                                if r != IDOK { return 0; }
-                            }
-                            let exc = unsafe { sa_check_excluded() };
-                            if exc != 0 {
-                                let r = msgbox_yn("Protected Processes", 
-                                    "Protected processes running. Clean anyway?", MB_ICONWARNING);
-                                if r != IDOK { return 0; }
-                            }
-                            do_clean_async(hwnd, m);
-                        }
+            match id {
+                IDC_BTN_CLEAN => {
+                    if G_CLEANING {
+                        update_status(hwnd, "Already cleaning...");
+                        return 0;
                     }
-                    IDC_BTN_CLEAN_SAFE => { do_clean_async(hwnd, 0x6F); }
-                    IDC_BTN_SEL_ALL => { sel_all(hwnd, true); }
-                    IDC_BTN_SEL_NONE => { sel_all(hwnd, false); }
-                    IDC_BTN_ABOUT => {
-                        msgbox("About SA Cleaner", 
-                            "SA Cleaner v1.0\nBy Seif Afandi\n\n9-Language Memory Cleaner\nResizable | Dark Mode | Threaded", 
-                            MB_ICONINFORMATION);
+                    let mask = get_mask(hwnd);
+                    if mask == 0 {
+                        msgbox("Nothing Selected", "Select at least one cleaning option.", MB_ICONWARNING);
+                        update_status(hwnd, "Ready");
+                        return 0;
                     }
-                    IDC_CHK_AUTO => {
-                        let chk = unsafe { IsDlgButtonChecked(hwnd, IDC_CHK_AUTO) };
-                        if chk == BST_CHECKED {
-                            let thr = get_threshold(hwnd);
-                            unsafe { sa_set_auto_threshold(thr); }
-                            let msg = format!("Auto-clean enabled at {}% threshold.", thr);
-                            msgbox("Auto-Clean", &msg, MB_ICONINFORMATION);
-                        } else {
-                            unsafe { sa_stop_auto_clean(); }
-                            msgbox("Auto-Clean", "Auto-clean disabled.", MB_ICONINFORMATION);
-                        }
-                    }
-                    IDC_CHK_DARK => {
-                        let chk = unsafe { IsDlgButtonChecked(hwnd, IDC_CHK_DARK) };
-                        apply_dark_mode(hwnd, chk == BST_CHECKED);
-                    }
-                    IDC_BTN_ADD_EXCL => {
-                        let mut buf = vec![0u16; 128];
-                        let len = unsafe { GetDlgItemTextW(hwnd, IDC_EDIT_EXCL, buf.as_mut_ptr(), 128) };
-                        if len > 0 {
-                            let s = String::from_utf16_lossy(&buf[..len as usize]);
-                            let trimmed = s.trim();
-                            if !trimmed.is_empty() {
-                                let cname = CString::new(trimmed).unwrap();
-                                unsafe { sa_add_exclusion(cname.as_ptr()); }
-                                refresh_exclusion_list(hwnd);
-                                unsafe { SetDlgItemTextW(hwnd, IDC_EDIT_EXCL, w("").as_ptr()); }
-                            }
-                        }
-                    }
-                    IDC_BTN_REM_EXCL => {
-                        let idx = unsafe { SendMessageW(GetDlgItem(hwnd, IDC_LST_EXCL), 0x0188, 0, 0) };
-                        if idx >= 0 {
-                            let mut buf = vec![0u16; 128];
-                            unsafe { SendMessageW(GetDlgItem(hwnd, IDC_LST_EXCL), 0x0189, idx as usize, buf.as_mut_ptr() as isize); }
-                            let s = String::from_utf16_lossy(&buf);
-                            let trimmed = s.trim();
-                            if !trimmed.is_empty() {
-                                let cname = CString::new(trimmed).unwrap();
-                                unsafe { sa_remove_exclusion(cname.as_ptr()); }
-                                refresh_exclusion_list(hwnd);
-                            }
-                        }
-                    }
-                    _ => { update_estimate(hwnd); }
+                    G_CLEANING = true;
+                    update_status(hwnd, "Cleaning in background...");
+                    let hwnd_copy = hwnd;
+                    std::thread::spawn(move || {
+                        let res = unsafe { sa_clean(mask) };
+                        unsafe { PostMessageW(hwnd_copy, WM_APP_CLEAN_DONE, res as WPARAM, 0); }
+                    });
                 }
+                IDC_BTN_SELECT_ALL => {
+                    for id in [
+                        IDC_CHK_WS, IDC_CHK_CACHE, IDC_CHK_STANDBY, IDC_CHK_MODIFIED,
+                        IDC_CHK_REGISTRY, IDC_CHK_COMBINE, IDC_CHK_LOWPRIO, IDC_CHK_FLUSH,
+                        IDC_CHK_CLIP, IDC_CHK_DNS, IDC_CHK_TEMP, IDC_CHK_PREFETCH, IDC_CHK_THUMB,
+                    ] {
+                        set_check(hwnd, id, true);
+                    }
+                    update_estimate(hwnd);
+                }
+                IDC_BTN_SELECT_SAFE => {
+                    for id in [
+                        IDC_CHK_WS, IDC_CHK_CACHE, IDC_CHK_STANDBY, IDC_CHK_MODIFIED,
+                        IDC_CHK_REGISTRY, IDC_CHK_COMBINE, IDC_CHK_LOWPRIO, IDC_CHK_FLUSH,
+                        IDC_CHK_CLIP, IDC_CHK_DNS, IDC_CHK_TEMP, IDC_CHK_PREFETCH, IDC_CHK_THUMB,
+                    ] {
+                        set_check(hwnd, id, false);
+                    }
+                    set_check(hwnd, IDC_CHK_WS, true);
+                    set_check(hwnd, IDC_CHK_CACHE, true);
+                    set_check(hwnd, IDC_CHK_STANDBY, true);
+                    set_check(hwnd, IDC_CHK_MODIFIED, true);
+                    set_check(hwnd, IDC_CHK_CLIP, true);
+                    set_check(hwnd, IDC_CHK_DNS, true);
+                    update_estimate(hwnd);
+                }
+                IDC_BTN_AGGRESSIVE => {
+                    G_AGGRESSIVE = !G_AGGRESSIVE;
+                    sa_set_aggressive(if G_AGGRESSIVE { 1 } else { 0 });
+                    let txt = if G_AGGRESSIVE { "Aggressive: ON" } else { "Aggressive: OFF" };
+                    set_text(hwnd, IDC_BTN_AGGRESSIVE, txt);
+                    update_status(hwnd, if G_AGGRESSIVE { "Aggressive mode enabled" } else { "Normal mode" });
+                }
+                IDC_BTN_THEME => {
+                    G_DARK = !G_DARK;
+                    apply_theme(hwnd);
+                    update_status(hwnd, if G_DARK { "Dark theme" } else { "Light theme" });
+                }
+                IDC_BTN_BG => {
+                    cycle_bg(hwnd);
+                    update_status(hwnd, "Background shade changed");
+                }
+                IDC_BTN_TRAY => {
+                    hide_to_tray(hwnd);
+                    update_status(hwnd, "Running in system tray (background)");
+                }
+                IDC_BTN_AUTO => {
+                    if !G_AUTO_ON {
+                        let mut pct: u32 = 75;
+                        let edit = GetDlgItem(hwnd, IDC_THRESHOLD_EDIT);
+                        if edit != 0 {
+                            let mut buf = [0u16; 8];
+                            let n = GetWindowTextW(edit, buf.as_mut_ptr(), 8);
+                            if n > 0 {
+                                let s = String::from_utf16_lossy(&buf[..n as usize]);
+                                if let Ok(v) = s.trim().parse::<u32>() {
+                                    pct = if v < 1 { 1 } else if v > 99 { 99 } else { v };
+                                }
+                            }
+                        }
+                        sa_set_auto_threshold(pct);
+                        G_AUTO_ON = true;
+                        set_text(hwnd, IDC_BTN_AUTO, &format!("Auto Running ({}%)", pct));
+                        update_status(hwnd, &format!("Auto-clean started — triggers at {}% RAM usage", pct));
+                        set_text(hwnd, IDC_HELP, help_for(IDC_BTN_AUTO));
+                    }
+                }
+                IDC_BTN_STOP_AUTO => {
+                    sa_stop_auto_clean();
+                    G_AUTO_ON = false;
+                    set_text(hwnd, IDC_BTN_AUTO, "Start Auto (75%)");
+                    update_status(hwnd, "Auto-clean stopped");
+                }
+                IDC_CHK_WS | IDC_CHK_CACHE | IDC_CHK_STANDBY | IDC_CHK_MODIFIED |
+                IDC_CHK_REGISTRY | IDC_CHK_COMBINE | IDC_CHK_LOWPRIO | IDC_CHK_FLUSH |
+                IDC_CHK_CLIP | IDC_CHK_DNS | IDC_CHK_TEMP | IDC_CHK_PREFETCH | IDC_CHK_THUMB => {
+                    update_estimate(hwnd);
+                    set_text(hwnd, IDC_HELP, help_for(id));
+                }
+                IDC_BTN_CLEAN | IDC_BTN_SELECT_SAFE | IDC_BTN_SELECT_ALL | IDC_BTN_AGGRESSIVE |
+                IDC_BTN_AUTO | IDC_BTN_STOP_AUTO | IDC_BTN_THEME | IDC_BTN_BG => {
+                    set_text(hwnd, IDC_HELP, help_for(id));
+                }
+                _ => {}
             }
             0
         }
@@ -589,119 +833,78 @@ extern "system" fn wndproc(hwnd: isize, msg: u32, wparam: usize, lparam: isize) 
             update_mem(hwnd);
             0
         }
-        WM_ERASEBKGND => {
-            unsafe {
-                let mut rc: RECT = std::mem::zeroed();
-                GetClientRect(hwnd, &mut rc);
-                let br = CreateSolidBrush(bg_color());
-                FillRect(wparam as isize, &rc, br);
-                DeleteObject(br);
-                return 1;
-            }
-        }
-        WM_CTLCOLORSTATIC => {
-            unsafe {
-                SetBkColor(wparam as isize, bg_color());
-                SetTextColor(wparam as isize, text_color());
-                return CreateSolidBrush(bg_color()) as isize;
-            }
-        }
-        WM_CTLCOLORBTN => {
-            unsafe {
-                SetBkColor(wparam as isize, panel_color());
-                return CreateSolidBrush(panel_color()) as isize;
-            }
-        }
-        WM_CTLCOLOREDIT => {
-            unsafe {
-                SetBkColor(wparam as isize, panel_color());
-                SetTextColor(wparam as isize, text_color());
-                return CreateSolidBrush(panel_color()) as isize;
-            }
-        }
-        WM_CTLCOLORLISTBOX => {
-            unsafe {
-                SetBkColor(wparam as isize, panel_color());
-                SetTextColor(wparam as isize, text_color());
-                return CreateSolidBrush(panel_color()) as isize;
-            }
-        }
-        WM_CLEAN_DONE => {
-            CLEANING.store(false, Ordering::SeqCst);
-            let res = wparam as i32;
-            let txt = get_err();
-            if res == -1 {
-                msgbox("Admin Required", &txt, MB_ICONERROR);
-            } else if res == 0 {
-                msgbox("Success!", &txt, MB_ICONINFORMATION);
-            } else {
-                msgbox("Results", &txt, MB_ICONWARNING);
-            }
-            update_status(hwnd, "Ready");
-            update_mem(hwnd);
-            update_estimate(hwnd);
-            0
-        }
         WM_SIZE => {
-            unsafe { InvalidateRect(hwnd, ptr::null(), 1); }
+            InvalidateRect(hwnd, ptr::null(), 1);
             0
         }
         WM_DESTROY => {
-            unsafe {
-                KillTimer(hwnd, 1);
-                PostQuitMessage(0);
-            }
+            KillTimer(hwnd, 1);
+            sa_stop_auto_clean();
+            tray_remove(hwnd);
+            if G_FONT_TITLE != 0 { DeleteObject(G_FONT_TITLE); }
+            if G_FONT_NORMAL != 0 { DeleteObject(G_FONT_NORMAL); }
+            if G_FONT_SMALL != 0 { DeleteObject(G_FONT_SMALL); }
+            if G_BRUSH_BG != 0 { DeleteObject(G_BRUSH_BG); }
+            if G_BRUSH_PANEL != 0 { DeleteObject(G_BRUSH_PANEL); }
+            PostQuitMessage(0);
             0
         }
-        _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
 
 fn ensure_admin() {
-    let admin = unsafe { sa_is_admin() };
-    if admin == 0 {
-        let r = msgbox_yn("Administrator Required", 
-            "SA Cleaner needs Administrator privileges.\n\nClick OK to restart as Admin.", 
-            MB_ICONINFORMATION);
-        if r == IDOK {
-            unsafe { sa_uac_restart(); }
+    unsafe {
+        if sa_is_admin() == 0 {
+            let r = msgbox_yn(
+                "Administrator Required",
+                "SA Cleaner v2 needs Administrator privileges for memory operations.\n\nClick Yes to restart elevated.",
+                MB_ICONINFORMATION,
+            );
+            if r == IDYES {
+                sa_uac_restart();
+            }
+            std::process::exit(0);
         }
-        std::process::exit(0);
     }
 }
 
 fn main() {
-    unsafe { sa_set_priority_low(); }
-    ensure_admin();
-
-    let hinst = unsafe { GetModuleHandleW(ptr::null()) };
-    let cn = w("SACleanerResizable");
-    let wc = WNDCLASSEXW { 
-        cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32, 
-        style: 0,
-        lpfnWndProc: wndproc as usize, 
-        cbClsExtra: 0, 
-        cbWndExtra: 0, 
-        hInstance: hinst,
-        hIcon: 0, 
-        hCursor: 0, 
-        hbrBackground: (COLOR_WINDOW+1) as isize,
-        lpszMenuName: ptr::null(), 
-        lpszClassName: cn.as_ptr(), 
-        hIconSm: 0 
-    };
     unsafe {
+        sa_set_priority_low();
+        ensure_admin();
+
+        let hinst = GetModuleHandleW(ptr::null());
+        let cn = w("SACleanerV2Dark");
+        let wc = WNDCLASSEXW {
+            cb_size: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            style: 0,
+            lpfn_wnd_proc: wndproc as usize,
+            cb_cls_extra: 0,
+            cb_wnd_extra: 0,
+            h_instance: hinst,
+            h_icon: 0,
+            h_cursor: LoadCursorW(0, 32512), 
+            hbr_background: CreateSolidBrush(CLR_DARK_BG),
+            lpsz_menu_name: ptr::null(),
+            lpsz_class_name: cn.as_ptr(),
+            h_icon_sm: 0,
+        };
         RegisterClassExW(&wc);
-        // Resizable window: WS_OVERLAPPEDWINDOW includes thickframe, maximize, minimize
+
         let hwnd = CreateWindowExW(
             0,
-            cn.as_ptr(), 
-            w("SA Cleaner v1.0 - By Seif Afandi").as_ptr(),
-            WS_OVERLAPPEDWINDOW,
-            0x80000000u32 as i32, 
-            0x80000000u32 as i32, 
-            720, 620, 
-            0, 0, hinst, ptr::null_mut()
+            cn.as_ptr(),
+            w("SA Cleaner v2.0  —  Advanced Memory Cleaner").as_ptr(),
+            WS_FIXED_FRAME,
+            0x80000000u32 as i32,
+            0x80000000u32 as i32,
+            760,
+            640,
+            0,
+            0,
+            hinst,
+            ptr::null_mut(),
         );
         ShowWindow(hwnd, SW_SHOW);
         UpdateWindow(hwnd);
